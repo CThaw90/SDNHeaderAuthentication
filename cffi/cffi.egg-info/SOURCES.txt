@@ -64,7 +64,6 @@ demo/xclient.py
 demo/y.py
 doc/Makefile
 doc/design.rst
-doc/make.bat
 doc/source/conf.py
 doc/source/index.rst
 testing/__init__.py
