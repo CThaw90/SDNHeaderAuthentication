@@ -1,0 +1,13 @@
+__pycache__/
+_build/
+build/
+dist/
+htmlcov/
+cryptography/_cffi__*
+cryptography/_Cryptography_cffi_*
+.tox/
+.cache/
+.coverage
+*.egg-info/
+*.egg
+*.py[co]
