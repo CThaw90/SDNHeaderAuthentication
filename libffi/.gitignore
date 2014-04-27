@@ -1,0 +1,6 @@
+Makefile
+autom4te.cache/
+fficonfig.h.in~
+i686-pc-linux-gnu/
+libffi-3.0.13.tar.gz
+makefile.sed~
