@@ -1,5 +1,10 @@
 # Controllers
 
+## Add PYTHONPATH
+`export PYTHONPATH=$PYTHONPATH:/home/mininet/development/SDNHeaderAuthentication`
+
+You should replace "development/SDNHeaderAuthentication" with the right path on you local machine.
+
 ## Run
 1. Create mininet topo
 
