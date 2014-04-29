@@ -11,10 +11,12 @@ There are keys already generated and located in the keys directory.
 You can generate and test keys by putting the new generated keys into a folder
 and using the path to that directory as an argument to ``-keydir``.
 
-``Note: You must use the naming conventions in order for the controller to properly
-load the keydata files. Use <Whatever>_pri.pem for private keys and 
-<Whatever>_pub.pem for public keys. Remember the underscore between the name and the 
-type id.``
+``**Note:** You must use the naming conventions in order for the controller to 
+properly load the keydata files. Use <Whatever>_pri.pem for private keys and 
+<Whatever>_pub.pem for public keys. (Where <Whatever> will be used as an 
+identification signature so the controller can determine which machine is 
+requesting verification.) Remember the underscore between the name and 
+the type id.`` 
 
 Public and private key files can be generated with the following script:
 
@@ -36,3 +38,5 @@ Public and private key files can be generated with the following script:
 Once the controller has loaded all keys into memory you can run the 
 ``host_script.py`` python script to send a signature string to the controller for 
 verification.
+
+The current script is hard coded for an id of host4 and the public/private key it is associated with you can change this by modifying the ``host_id`` variable.

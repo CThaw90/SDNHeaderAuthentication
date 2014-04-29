@@ -1,8 +1,9 @@
 from Crypto.PublicKey import RSA
 
 key_dir = str("/home/mininet/pox/keys/")
-private_keyfile = str("host4_pri.pem")
-public_keyfile = str("host4_pub.pem")
+host_id = str("host4")
+private_keyfile = str(host_id + "_pri.pem")
+public_keyfile = str(host_id + "_pub.pem")
 
 key = RSA.generate(4096)
 
