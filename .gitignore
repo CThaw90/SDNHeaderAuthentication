@@ -2,3 +2,4 @@
 # -------------------
 IgnoredFiles/*
 *.pyc
+*.pyo
