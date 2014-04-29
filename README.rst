@@ -39,16 +39,16 @@ Next you want to install the ``libffi`` python library package. You can
 use the one available but it might be easier to just clone it from the 
 the `libffi repository`_. 
 
-If you use the version source code to build ``libffi`` you must run the ``./autogen.sh`` command and then run``./configure``.
+If you use the version source code to build ``libffi`` you must run the ``./autogen.sh`` command and then run ``./configure``.
 
 Once ``configure`` has finished, type ``make``. Note that you must be 
 using GNU make. You can ftp GNU make from ftp.gnu.org:/pub/gnu/make
-Ensure texinfo is installed
+Ensure texinfo is installed: ``apt-get install texinfo``
 
 To ensure that libffi is working as advertised, type ``make check``. This
 will require that you have DehaGNU installed.
 
-To install the library an header files, type ``make install``.
+To install the library and header files, type ``make install``.
 
 Package cffi
 ~~~~~~~~~~~~~~~
@@ -80,7 +80,7 @@ interpreter or via a Python script.
 .. code-block:: pycon
 
 	>>> from cryptography.fernet import Fernet
-	>>> # Put this somewhere sage!
+	>>> # Put this somewhere safe!
 	>>> key = Fernet.generate_key()
 	>>> f = Fernet(key)
 	>>> token = f.encrypt(b"Secret Message")
@@ -89,6 +89,12 @@ interpreter or via a Python script.
 	'Secret Message'
 
 You can find more information in the `documentation`_.
+
+Package PyCrypto
+~~~~~~~~~~~~~~~~~~~~~
+Using the PyCrypto library for asymmetric cryptography
+
+Run the ``python setup.py install`` command.
 
 .. _`documentation`: https://cryptography.io/
 
