@@ -42,6 +42,7 @@ import struct
 from threading import Thread
 from Crypto.PublicKey import RSA
 from Crypto.Hash import SHA256
+#from Crypto.Hash.SHA256 import SHA256Hash
 from Crypto.Signature import PKCS1_v1_5
 from base64 import b64encode, b64decode
 
@@ -156,7 +157,7 @@ class Controller (object):
     tcp=packet.find('tcp')
 
 
-
+    AuthPacket=False
     if ip is not None:
         #print tcp.srcport#tip.dstip#print ip.srcip.toStr()
 
@@ -180,12 +181,14 @@ class Controller (object):
 
 
         #data= self.parse_pkt_data(ip.raw)
+#encrypting host id signed host id with public key of controller
         public_key=self.find_host_key(["host"+src_id[1]])
         if self.priority==2000:
     	   self.priority=20
 
-        print "Data: "+":".join("{:02x}".format(ord(c)) for c in data)
+        #print "Data: "+":".join("{:02x}".format(ord(c)) for c in data)
         if data[:2]==b"\x39\xE1" and data[4:5]==b"\x10":
+            AuthPacket=True
             length= struct.unpack('>H',data[2:4]) #check endianness
             #print "Length: "+str(length[0])
 
@@ -208,37 +211,44 @@ class Controller (object):
 
             for i in range(0,len(self.secure_path)):
                 if self.secure_path[i][0]==src_id and self.secure_path[i][1]==dst_id:
-                    print "Path Found"
+
                     index=i
 
             if index !=-1:
                 for i in range(0,(len(self.secure_path[index])-2)):
-                    hash_array.append(enc_val) #hash value encrypted
-                    enc_val=self.importDigest(str(enc_val)) #need to hash value again
-
-
+                    enc_val=self.importDigest(str(enc_val))
+                    hash_array.append(EthAddr(self.createMAC(enc_val.hexdigest()))) #hash value encrypted
+                    #print enc_val.hexdigest()
 
                 for i in range(1,len(self.secure_path[index])-1):
                     sw = self.secure_path[index][len(self.secure_path[index])-i]
-                    print sw +" "+sw[1]+" "+dpid_to_str(self.connection.dpid)
-                    if dpid_to_str(self.connection.dpid)==sw[1]:
+                    sw = "00-00-00-00-00-0"+sw[1]
+                    #print sw +"  "+dpid_to_str(self.connection.dpid)
+                    #print hash_array[i-1].digest()
+                    if dpid_to_str(self.connection.dpid)==sw:
+                            #print "Adding rule to switch"+sw
 
                             rule = of.ofp_flow_mod()
                             rule.priority =self.priority+1
 
                             if i == len(self.secure_path[index])-2:
                                 rule.match=of.ofp_match(dl_src=packet.src, dl_dst=packet.dst, nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
+                                print "packet source "+str(packet.src)+" modifying to value "+str(hash_array[i-1])
                             else:
-        					   rule.match=of.ofp_match(dl_src=EthAddr(hash_array[i][0:47]), dl_dst=packet.dst, nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
+                                rule.match=of.ofp_match(dl_src=hash_array[i], nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
+                                print "packet source "+str(packet.src)+"=? "+str(hash_array[i])+" modifying to value "+str(hash_array[i-1])
 
-                            rule.actions.append(of.ofp_action_dl_addr.set_src(EthAddr(hash_array[i-1][0:47])))     #!!!!!!!!hashed value from array may need to convert to MAC and split formate 00:00:00:00:00:00))
+                            rule.actions.append(of.ofp_action_dl_addr.set_src(hash_array[i-1]))     #!!!!!!!!hashed value from array may need to convert to MAC and split formate 00:00:00:00:00:00))
                             rule.actions.append(of.ofp_action_output(port = of.OFPP_ALL))
                             self.connection.send(rule)
+
+                            #self.resend_packet(packet_in, of.OFPP_ALL)
 
 
                 drop_rule = of.ofp_flow_mod()
                 drop_rule.priority =self.priority
-                drop_rule.match=of.ofp_match(dl_dst=packet.dst, nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
+                #print dir(drop_rule.actions)
+                drop_rule.match=of.ofp_match( nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
                 self.connection.send(drop_rule)
 
 
@@ -248,7 +258,7 @@ class Controller (object):
             value=0
 
 
-            self.priority+=2
+            #self.priority+=2
 
     """
     3. If this exists can use nonce and value included to encrypt with private key of controller and
@@ -266,15 +276,15 @@ class Controller (object):
 
     print dpid_to_str(self.connection.dpid)+" Src: "+str(packet.src)+" Dest: "+str(packet.dst)
 
+
     dest_port=-1
 
     #if the port associated with the destination MAC of the packet is known:
     # Send packet out the associated port
     for key in self.mac_to_port:
         if key == str(packet.dst):
-	    dest_port=self.mac_to_port[key]
-
-            break
+           dest_port=self.mac_to_port[key]
+           break
 
     if dest_port != -1:
 
@@ -283,14 +293,13 @@ class Controller (object):
         self.resend_packet(packet_in,dest_port)
 
         fm = of.ofp_flow_mod()
-    	fm.priority =10
-    	fm.match.dl_dst=packet.dst
-    	fm.actions.append(of.ofp_action_output(port = dest_port))
-    	self.connection.send(fm)
+        fm.priority =10
+        fm.match.dl_dst=packet.dst
+        fm.actions.append(of.ofp_action_output(port = dest_port))
+        self.connection.send(fm)
 
         # Maybe the log statement should have source/destination/port?
-      	print "Installing flow for dst: "+str(packet.dst)+" on port: "+str(dest_port)
-
+        print "Installing flow for dst: "+str(packet.dst)+" on port: "+str(dest_port)
 
     #else:
       # Flood the packet out everything but the input port
@@ -332,6 +341,10 @@ class Controller (object):
 		return None
     return (self.host_keys[parsed_data[0]] if self.host_keys.__contains__(parsed_data[0]) else None)
 
+  def createMAC(self,str_arg):
+    eth_str=str_arg[0:1]+":"+str_arg[1:2]+":"+str_arg[2:3]+":"+str_arg[3:4]+":"+str_arg[4:5]+":"+str_arg[5:6]
+
+    return str(eth_str)
   def importDigest(self,message):
 
 	digest = SHA256.new()
