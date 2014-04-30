@@ -78,6 +78,7 @@ for args in sys.argv:
 
 	else:
 		print ("--Usage: python generateKeys.py -keydir <path_to_keys> -host_id <args_of_host_id>")
+		print ("...		-keysize <length of key in bits (multiple of 1024)>")
 		sys.exit()
 
 print ("Generating keys...")
