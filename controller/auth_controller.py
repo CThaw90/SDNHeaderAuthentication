@@ -195,7 +195,7 @@ class Controller (object):
             #validate the host
 
             value=data[5:5+length[0]]
-            rand_val = os.urandom(4)
+            rand_val = 14
 
             enc_str=str(rand_val)+str(value)
             enc_val=self.importDigest(enc_str)
@@ -215,10 +215,16 @@ class Controller (object):
                     index=i
 
             if index !=-1:
+                print "index"
+                digest = SHA256.new()
+
                 for i in range(0,(len(self.secure_path[index])-2)):
-                    enc_val=self.importDigest(str(enc_val))
-                    hash_array.append(EthAddr(self.createMAC(enc_val.hexdigest()))) #hash value encrypted
-                    #print enc_val.hexdigest()
+                    #enc_val=self.importDigest(str(enc_val))
+               	    data = b64encode(str(enc_val))
+                    digest.update(b64decode(data))
+                    enc_val=digest.hexdigest()
+                    hash_array.append(EthAddr(self.createMAC(enc_val))) #hash value encrypted
+
 
                 for i in range(1,len(self.secure_path[index])-1):
                     sw = self.secure_path[index][len(self.secure_path[index])-i]
@@ -232,25 +238,28 @@ class Controller (object):
                             rule.priority =self.priority+1
 
                             if i == len(self.secure_path[index])-2:
-                                rule.match=of.ofp_match(dl_src=packet.src, dl_dst=packet.dst, nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
-                                print "packet source "+str(packet.src)+" modifying to value "+str(hash_array[i-1])
+                                rule.match=of.ofp_match(dl_src=packet.src, dl_dst=packet.dst, nw_src=ip.srcip, nw_dst=ip.dstip, tp_dst=tcp.dstport)
+                                print sw+" packet source "+str(packet.src)+" modifying to value "+str(hash_array[i-1])
                             else:
-                                rule.match=of.ofp_match(dl_src=hash_array[i], nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
-                                print "packet source "+str(packet.src)+"=? "+str(hash_array[i])+" modifying to value "+str(hash_array[i-1])
+                                rule.match=of.ofp_match(dl_src=hash_array[i], nw_src=ip.srcip, nw_dst=ip.dstip, tp_dst=tcp.dstport)
+                                print sw+" packet source "+str(packet.src)+"=? "+str(hash_array[i])+" modifying to value "+str(hash_array[i-1])
 
-                            rule.actions.append(of.ofp_action_dl_addr.set_src(hash_array[i-1]))     #!!!!!!!!hashed value from array may need to convert to MAC and split formate 00:00:00:00:00:00))
+
+                            if i!=1:
+                                rule.actions.append(of.ofp_action_dl_addr.set_src(hash_array[i-1]))     #!!!!!!!!hashed value from array may need to convert to MAC and split formate 00:00:00:00:00:00))
+
                             rule.actions.append(of.ofp_action_output(port = of.OFPP_ALL))
                             self.connection.send(rule)
 
                             #self.resend_packet(packet_in, of.OFPP_ALL)
 
 
-                drop_rule = of.ofp_flow_mod()
-                drop_rule.priority =self.priority
-                #print dir(drop_rule.actions)
-                drop_rule.match=of.ofp_match( nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
-                self.connection.send(drop_rule)
-
+                            drop_rule = of.ofp_flow_mod()
+                            drop_rule.priority =self.priority
+                            #print dir(drop_rule.actions)
+                            drop_rule.match=of.ofp_match( nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
+                            self.connection.send(drop_rule)
+                            self.priority+=2
 
             enc_value=0
             enc_str=0
@@ -258,7 +267,7 @@ class Controller (object):
             value=0
 
 
-            #self.priority+=2
+
 
     """
     3. If this exists can use nonce and value included to encrypt with private key of controller and
@@ -276,7 +285,7 @@ class Controller (object):
 
     print dpid_to_str(self.connection.dpid)+" Src: "+str(packet.src)+" Dest: "+str(packet.dst)
 
-
+    #self.mac_to_port[str(packet.src)]=packet_in.in_port
     dest_port=-1
 
     #if the port associated with the destination MAC of the packet is known:
