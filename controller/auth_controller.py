@@ -34,8 +34,10 @@ from pox.core import core
 from pox.lib.addresses import EthAddr
 from pox.lib.addresses import IPAddr
 from pox.lib.util import dpid_to_str
+import pox.lib.packet as packet
 import pox.openflow.libopenflow_01 as of
 import time
+import os
 from threading import Thread
 
 log = core.getLogger()
@@ -44,9 +46,12 @@ log = core.getLogger()
 
 class Tutorial (object):
 
+  host= {"10.0.0.1":'h1',"10.0.0.2":'h2',"10.0.0.3":'h3',"10.0.0.4":'h4',"10.0.1.0":'h1'}
 
-  simple_secure_path = ["h1","h4","s9","s4","s6"]
-  secure_path = ["h2","h3","s9","s1","s8","s2"]
+  secure_path = [["h1","h4","s7","s1","s4","s5"],
+["h2","h3","s7","s1","s8","s2"],["h4","h1","s6","s4","s1","s7"],["h1","h3","s7","s1","s8","s3"],
+["h3","h2","s3","s8","s1","s7"],["h3","h1","s7","s1","s8","s3"],["h3","h4","s2","s8","s1","s4","s5"],
+["h2","h4","s7","s1","s4","s6"],["h4","h3","s6","s4","s1","s8","s3"],["h4","h2","s6","s4","s1","s7"]]
 
 
 
@@ -61,14 +66,16 @@ class Tutorial (object):
     # Use this table to keep track of which ethernet address is on
     # which switch port (keys are MACs, values are ports).
     self.mac_to_port = {}
+    self.ip_to_port = {}
+    self.priority=20
 
 
     #code for simple NAT behavior not performing as expected
-    """
+
     if dpid_to_str(connection.dpid)=="7":
 	msg1 = of.ofp_flow_mod()
     	msg2 = of.ofp_flow_mod()
-    	msg1.priority = msg2.priority = 20
+    	msg1.priority = msg2.priority = 200
     	msg1.match.nw_src=IPAddr("10.0.0.1")
     	msg2.match.nw_src=IPAddr("10.0.0.2")
 
@@ -81,20 +88,20 @@ class Tutorial (object):
 
   	msg3 = of.ofp_flow_mod()
     	msg4 = of.ofp_flow_mod()
-    	msg3.priority = msg4.priority = 20
+    	msg3.priority = msg4.priority = 2000
     	msg3.match.nw_dst=IPAddr("10.0.0.1")
     	msg4.match.nw_dst=IPAddr("10.0.0.2")
 
 
     	self.connection.send(msg3)
     	self.connection.send(msg4)
-    """
+
 
     if dpid_to_str(connection.dpid)=="8":
     	#Setting up rules for blocking ip traffic from h1 or h2  to h3
     	msg1 = of.ofp_flow_mod()
     	msg2 = of.ofp_flow_mod()
-    	msg1.priority = msg2.priority = 20
+    	msg1.priority = msg2.priority = 2000
     	msg1.match.nw_src=IPAddr("10.0.0.1")
     	msg2.match.nw_src=IPAddr("10.0.0.2")
 
@@ -103,11 +110,6 @@ class Tutorial (object):
     	self.connection.send(msg31)
 
 
-
-    default_rule = of.ofp_flow_mod()
-    default_rule.priority = 1
-    default_rule.actions.append(of.ofp_action_output(port = of.OFPP_CONTROLLER))
-    self.connection.send(default_rule)
 
   def resend_packet (self, packet_in, out_port):
 
@@ -130,54 +132,106 @@ class Tutorial (object):
 
   def act_like_switch (self, packet, packet_in):
 
-    print "Data: "+packet
+    print "*rawdata string:*"+str(packet.raw[53:])+"*:end of string"
+    data=packet.raw[53:]
 
-    if packet[:2]==b"\x39\xE1" and packet[4:5]==b"\x10":
-	length= struct.unpack('>Q',) #check endianness
-	print "Length: "+length
-
-	value=packet[5:5+length]
-	#enc_val=do encryption of value with private key of controller
-
-	hash_arry= array()
-	#populate array with necessary hash values
+    ip=packet.find('ipv4')
+    tcp=packet.find('tcp')
+    if ip is not None:
+		print tcp.srcport#tip.dstip#print ip.srcip.toStr()
 
 
-	for index in range(1,len(secure_path)):
-		sw = secure_path[len(secur_path)-index]
-		rule = of.ofp_flow_mod()
-		rule.priority =19
-		#rule.match.#all fields of
-		rule.actions.append(of.ofp_action_dl_addr.set_src(EthAddr()))#hashed value from array may need to convert to MAC formate 00:00:00:00:00:00))
-		rule.actions.append(of.ofp_action_output(port = dest_port))#should be id of next switch
-		self.connection.send(rule)
+    #seen=False
+    #if len(self.mac_to_port) and str(packet.src) in self.mac_to_port:
+	#seen=True
 
-	#for security 0 all variables used
+
+    if self.priority==2000:
+	   self.priority=20
+
+    if data[:2]==b"\x39\xE1" and data[4:5]==b"\x10":
+        length= struct.unpack('>Q',) #check endianness
+        print "Length: "+length
+
+        value=data[5:5+length]
+        rand_val = os.urandom(4)
+
+        enc_val=0#!!!!!!do encryption of value with private key of controller and random value
+
+        hash_array= []
+        src_id=""
+        dst_id=""
+
+        for key in secure_path:
+		  if ip.src.toStr()==key:
+			src_id=host[key]
+
+		  if ip.dst.toStr()==key:
+			dst_id=host[key]
+
+        if src_ip!="" and dst_ip!="":
+		  index=-1
+
+        for i in range(0,len(secure_path)):
+			if secure_path[i][0]==src_id and secure_path[i][1]==dst_id:
+				index=i
+
+        if index !=-1:
+            for i in range(0,(len(secure_path[index])-2)):
+                hash_array.append(enc_val) #hash value encrypted)#!!!
+                enc_val="hash" #need to hash value again
+
+
+			#!!!!!!!depending on length of hash valu need to chop up into peices
+			#and also may not need as many hashes
+            for i in range(1,len(secure_path[index])-1):
+                sw = secure_path[index][len(secur_path)-i]
+
+                if dpid_to_str(connection.dpid)==sw[1]:
+                        rule = of.ofp_flow_mod()
+                        rule.priority =self.priority+1
+
+                        if i == len(secure_path[index])-2:
+                            rule.match=of.ofp_match(dl_src=packet.src, dl_dst=packet.dst, nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
+                        else:
+    					   rule.match=of.ofp_match(dl_src=EthAddr(hash_array(i)), dl_dst=packet.dst, nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
+
+                        rule.actions.append(of.ofp_action_dl_addr.set_src(EthAddr(hash_array(i-1))))     #!!!!!!!!hashed value from array may need to convert to MAC and split formate 00:00:00:00:00:00))
+                        rule.actions.append(of.ofp_action_output(port = dest_port))		   #!!!!!!!!!need a way of determining the port number
+                        self.connection.send(rule)
+
+			#for all switches: #!!!!go through all switches
+
+				#send drop rule to all switches
+				drop_rule = of.ofp_flow_mod()
+		    		drop_rule.priority =self.priority
+		    		drop_rule.match=of.ofp_match(dl_dst=packet.dst, nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
+
+		    		self.connection.send(drop_rule)
+
+
+        enc_value=0
+		hash_array=array()
+		value=0
+
+
+		self.priority+=2
 
     """
-    1. create array dealing with order of path, (could provide way of changing to user running
-       controller
-    2. When receiving a packet check for presence of auth header and type in data portion of packet
     3. If this exists can use nonce and value included to encrypt with private key of controller and
    	and generate the flow rules
     4.  do hash of value n times
     5. To first switch (switch that sent packet ) send rule that modifies the received packet with the
 	metadata of nth hash
+	add drop rule to all switchets for flow with less priority
     6.  in each successive switch modify the meta data with n-1, n-2 have second rule that drops flow for
 	anything else
     7. store in switch keep track of current priority or some value to remove flow if update of secure path
        happens
+
     """
 
-
-    print "Src: "+str(packet.src)+" Dest: "+str(packet.dst)
-
-
-
-    # Learn the port for the source MAC
-    self.mac_to_port[str(packet.src)]=packet_in.in_port
-
-
+    #print "Src: "+str(packet.src)+" Dest: "+str(packet.dst)
 
     dest_port=-1
 
@@ -205,11 +259,14 @@ class Tutorial (object):
       	print "Installing flow for dst: "+str(packet.dst)+" on port: "+str(dest_port)
 
 
-    else:
+    #else:
       # Flood the packet out everything but the input port
       # This part looks familiar, right?
-      self.resend_packet(packet_in, of.OFPP_ALL)
-      print "Flooding Packet"
+     #
+    else:
+
+ 	self.resend_packet(packet_in, of.OFPP_ALL)
+   	#print "Flooding Packet"
 
 
 
@@ -235,7 +292,7 @@ def launch ():
   """
   Starts the component
   """
-
+  core.openflow.miss_send_len = 0xffff
   def start_switch (event):
     log.debug("Controlling %s" % (event.connection,))
     Tutorial(event.connection)
