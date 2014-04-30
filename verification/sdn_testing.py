@@ -21,13 +21,15 @@ class Module (object):
 	self.digest = self.importDigest()
 	self.private_key = None
 	self.public_key = None
-	self.host_pubkeys = []
-	self.host_ids = []
+	#self.host_pubkeys = []
+	#self.host_ids = []
+	self.host_keys = {}
 	
 	if not self.key_directory == None:
 		self.load_host_keys()
 
 	self.load_controller_keys() 
+
     def importDigest(self):
 	
 	digest = SHA256.new()
@@ -41,16 +43,17 @@ class Module (object):
 		parseFilename = filename.rsplit("_", 1)
 		if len(parseFilename) == 2 and len(parseFilename[1].split(".")) == 2:
 			if parseFilename[1].split(".")[0] == str("pub"):
-				self.host_ids.append(parseFilename[0])
+				#self.host_ids.append(parseFilename[0])
 				current_key = open(self.key_directory + '/' + filename, 'r').read()
-				self.host_pubkeys.append(RSA.importKey(current_key))
+				#self.host_pubkeys.append(RSA.importKey(current_key))
+				self.host_keys[parseFilename[0]] = RSA.importKey(current_key)
  				#print ("{0} -> {1}".format(parseFilename[0], parseFilename[1]))	
 	#print (self.host_pubkeys)
-	print (self.host_ids)
+	#print (self.host_keys)
 
     def load_controller_keys(self):
-	private_keydata = open('/home/mininet/pox/keys/controller_private.pem', 'r').read()
-	public_keydata = open('/home/mininet/pox/keys/controller_public.pem', 'r').read()
+	private_keydata = open(self.key_directory + 'controller_private.pem', 'r').read()
+	public_keydata = open(self.key_directory + 'controller_public.pem', 'r').read()
 
 	self.private_key = RSA.importKey(private_keydata)
 	self.public_key = RSA.importKey(public_keydata)
@@ -76,11 +79,15 @@ class Module (object):
 		#print(ipv4_packet.raw)
 
 		parsed_data = self.parse_pkt_data(ipv4_packet.raw)
+		public_key = self.find_host_key(parsed_data)
+		#index = self.find_by_id(parsed_data)
+		#print ("Index={0}".format(index))
+		#print ("Public Key={0}".format(public_key))
 
-		index = self.find_by_id(parsed_data)
-		print ("Index={0}".format(index))
+		#if not index == -1 and self.validate_signature(parsed_data[1], index):
+		#	print("MACHINE VERIFIED. ALLOW FLOW!!")
 
-		if not index == -1 and self.validate_signature(parsed_data[1], index):
+		if not type(public_key) == type(None) and self.verify_signature(public_key, parsed_data[1]):
 			print("MACHINE VERIFIED. ALLOW FLOW!!")
 
         self.resend_packet(event.ofp, of.OFPP_ALL)
@@ -90,43 +97,56 @@ class Module (object):
 	delim = str("%")
 	parsed_data = raw_data.split(delim, 2)
 	garbage_data = parsed_data.pop(0)
-	print (parsed_data)
+	#print (parsed_data)
 	return parsed_data
 
-    def find_by_id(self, parsed_data=[]):
-	print ("Running find_by_id() method!")
-	index = 0
-	if len(parsed_data) == 2:
-		print ("Parsed Data == 2")	
-		for ids in self.host_ids:
-			
-			if ids == parsed_data[0]:
-				print("{0} == {1}".format(parsed_data[0], ids))
-				break
-			else:
-				print("{0} != {1}".format(parsed_data[0], ids))
-				index+=1
-
-		if index < len(self.host_ids):
-			print ('Valid ID found!')
-
-		if index >= len(self.host_ids):
-			print ('No matching result for this ID')
-			index = -1
-
-	else:
-		# Not a Valid Parsed Packet
-		index = -1
-		pass
-	print ("Returning {0}".format(index))
-	return index
-
+    def find_host_key(self, parsed_data=[]):
+	if len(parsed_data) != 2:
+		return None
+	return (self.host_keys[parsed_data[0]] if self.host_keys.__contains__(parsed_data[0]) else None)
+#"""
+#    def find_by_id(self, parsed_data=[]):
+#	print ("Running find_by_id() method!")
+#	index = 0
+#	if len(parsed_data) == 2:
+#		print ("Parsed Data == 2")	
+#		for ids in self.host_ids:
+#			
+#			if ids == parsed_data[0]:
+#				print("{0} == {1}".format(parsed_data[0], ids))
+#				break
+#			else:
+#				print("{0} != {1}".format(parsed_data[0], ids))
+#				index+=1
+#
+#		if index < len(self.host_ids):
+#			print ('Valid ID found!')
+#
+#		if index >= len(self.host_ids):
+#			print ('No matching result for this ID')
+#			index = -1
+#
+#	else:
+#		# Not a Valid Parsed Packet
+#		index = -1
+#		pass
+#	print ("Returning {0}".format(index))
+#	return index
+#"""
     def validate_signature(self, parsed_cipher, index):
-	ciphertext = b64encode(parsed_cipher)
+	ciphertext = parsed_cipher
 	signer = PKCS1_v1_5.new(self.host_pubkeys[index])
-	print ("Cipher Text: {0}".format(b64decode(ciphertext)))
-	print ("VERIFICATION RETURNED {0}".format(signer.verify(self.digest, ciphertext)))
-	return True
+	#print ("Cipher Text: {0}".format(ciphertext))
+	#print ("VERIFICATION RETURNED {0}".format(signer.verify(self.digest, b64decode(ciphertext))))
+	result = signer.verify(self.digest, b64decode(ciphertext))
+	return result
+
+    def verify_signature(self, public_key, ciphertext):
+	#print ("Public Key Object={0}".format(public_key))
+	signer = PKCS1_v1_5.new(public_key)
+	result = signer.verify(self.digest, b64decode(ciphertext))
+	return result
+	
 
 def launch(keydir=None):
 
