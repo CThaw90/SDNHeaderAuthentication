@@ -15,33 +15,41 @@ from functools import partial
 from mininet.node import RemoteController, Controller, OVSSwitch
 
 class MyTopo( Topo ):
-    "Simple topology example."
+  "Simple topology example."
 
-    def __init__( self ):
-        "Create custom topo."
+  def __init__( self ):
+    "Create custom topo."
 
-        # Initialize topology
-        Topo.__init__( self )
+    # Initialize topology
+    Topo.__init__( self )
 
-        # Add hosts and switches
-        leftHost1 = self.addHost( 'h1' )
-        leftHost2 = self.addHost( 'h2' )
-        rightHost = self.addHost( 'h3' )
-        leftSwitch = self.addSwitch( 's1' )
-        rightSwitch = self.addSwitch( 's2' )
-        middleSwitch = self.addSwitch('s3')
+    # Add hosts and switches
+    host1 = self.addHost( 'h1' )
+    host2 = self.addHost( 'h2' )
+    host3 = self.addHost( 'h3' )
+    host4 = self.addHost( 'h4' )
+    host5 = self.addHost( 'h5' )
+    edge_switch1 = self.addSwitch( 'es1' )
+    edge_switch2 = self.addSwitch( 'es2' )
+    core_switch1 = self.addSwitch('cs1')
+    core_switch2 = self.addSwitch('cs2')
+    core_switch3 = self.addSwitch('cs3')
 
-        # Add links
-        self.addLink( leftHost1, leftSwitch )
-        self.addLink( leftHost2, leftSwitch )
-        self.addLink( leftSwitch, middleSwitch )
-        self.addLink( rightSwitch, middleSwitch )
-        self.addLink( rightHost, rightSwitch )
+    # Add links
+    self.addLink( host1, edge_switch1 )
+    self.addLink( host2, edge_switch1 )
+    self.addLink( edge_switch1, core_switch1 )
+    self.addLink( core_switch1, core_switch2 )
+    self.addLink( core_switch2, edge_switch2 )
+    self.addLink( host3, edge_switch2 )
+    self.addLink( core_switch3, core_switch2 )
+    self.addLink( host4, core_switch3)
+    self.addLink( host5, core_switch3)
 
-
-c0 = RemoteController( 'c0', controller=RemoteController, ip='127.0.0.1', port=6633 )
-c1 = RemoteController( 'c1', controller=RemoteController, ip='127.0.0.1', port=6644 )
-cmap = { 's1': c0, 's2': c1, 's3': c1 }
+c0 = RemoteController( 'c0', controller=RemoteController, ip='127.0.0.1', port=6644 )
+c1 = RemoteController( 'c1', controller=RemoteController, ip='127.0.0.1', port=6655 )
+c2 = RemoteController( 'c2', controller=RemoteController, ip='127.0.0.1', port=6633)
+cmap = { 'es1': c0, 'es2': c0, 'cs1': c1, 'cs2': c1, 'cs3': c2 }
 
 
 class MultiSwitch( OVSSwitch ):

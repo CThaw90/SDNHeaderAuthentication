@@ -86,11 +86,10 @@ class Tutorial (object):
     1. Implementing a "simple" learning switch.
     """
 
-    log.debug(" => SWITCH[{2}]: Rcv {0} , packet_in: {1}".format(packet, packet_in, dpid))
-
-    log.debug(" ==> Pkt Data:{0}".format(packet.dump()))
     p = packet
     if p.find('ipv4'):
+      log.debug(" => SWITCH[{2}]: Rcv {0} , packet_in: {1}".format(packet, packet_in, dpid))
+      log.debug(" ==> Pkt Data:{0}".format(packet.dump()))
       while p:
         if isinstance(p, basestring):
           log.debug( "[%s bytes]={%s}" % (len(p),p) )
@@ -98,49 +97,58 @@ class Tutorial (object):
         log.debug("[%s]=%s" % (p.__class__.__name__, p))
         p = p.next
 
-    # Here's some psuedocode to start you off implementing a learning
-    # switch.  You'll need to rewrite it as real Python code.
-
     # Learn the port for the source MAC
     # log.debug(" ==> MAC: {0}->{1}".format(packet.src, packet.dst))
     self.mac_to_port[str(packet.src)] = packet_in.in_port
 
+    is_halted = False 
     # log.debug(" ==> MAC2PORT: {0}".format(self.mac_to_port))
     port_out = self.mac_to_port.get(str(packet.dst))
     if port_out:
-      # Send packet out the associated port
-      # self.resend_packet(packet_in, self.mac_to_port.get(str(packet.dst)))
+      is_authenticated = True
+      if packet.find("ipv4"):
+        # Authenticate a packet
+        is_authenticated = self.authenticate(packet)
+        log.debug("==> ipv4: packet auth={0}".format(is_authenticated))
 
-      # Once you have the above working, try pushing a flow entry
-      # instead of resending the packet (comment out the above and
-      # uncomment and complete the below.)
+      if is_authenticated:
+        log.debug("Installing flow...")
 
-      log.debug("Installing flow...")
-      # Maybe the log statement should have source/destination/port?
+        msg = of.ofp_flow_mod()
 
-      msg = of.ofp_flow_mod()
+        # Exact match
+        msg.match = of.ofp_match.from_packet(packet_in)
+        msg.idle_timeout = 60
+        msg.hard_timeout = 30 # for debugging purpose
+        msg.buffer_id = packet_in.buffer_id
+        msg.data = packet_in
+        msg.actions.append(of.ofp_action_output(port=port_out))
 
-      ## Set fields to match received packet
-      # Exact match
-      msg.match = of.ofp_match.from_packet(packet_in)
-      msg.idle_timeout = 60
-      # msg.hard_timeout = 60 # for debugging purpose
-      msg.buffer_id = packet_in.buffer_id
-      msg.data = packet_in
-      msg.actions.append(of.ofp_action_output(port=port_out))
-
-      # log.debug(" ==> Msg: {0}".format(msg))
-      # Send msg to swtich
-      self.connection.send(msg)
+        # log.debug(" ==> Msg: {0}".format(msg))
+        # Send msg to swtich
+        self.connection.send(msg)
+      else:
+        log.debug("==> Packet is not authenticated! Drop the packet")
+        is_halted = True
 
     else:
       log.debug(" ==> Unknowd {0} -- Flood all".format(packet.dst))
       # Flood the packet out everything but the input port
-      # This part looks familiar, right?
       self.resend_packet(packet_in, of.OFPP_ALL)
 
-
     log.debug("------------------------------")
+    return is_halted
+
+  def authenticate(self, packet):
+    """
+    This method authenticate a packet. Return true if the packet is authenticated.
+    False is returned otherwise.
+    """
+    raw = packet.raw
+    if raw.find("auth=true") > -1 :
+      return True
+
+    return False
 
   def act_like_firewall_drop (self, packet, packet_in):
     """
@@ -166,14 +174,8 @@ class Tutorial (object):
     # Send msg to swtich
     self.connection.send(msg)
 
-    # else:
-    #   log.debug(" ==> Unknowd {0} -- Flood all".format(packet.dst))
-    #   # Flood the packet out everything but the input port
-    #   # This part looks familiar, right?
-    #   self.resend_packet(packet_in, of.OFPP_ALL)
-
-
     log.debug("------------------------------")
+
   def _handle_PacketIn (self, event):
     """
     Handles packet in messages from the switch.
@@ -189,7 +191,9 @@ class Tutorial (object):
 
     if self.is_ip_blocked(packet):
       # event.halt = True
-      self.act_like_firewall_drop(packet, packet_in)
+      is_halted = self.act_like_firewall_drop(packet, packet_in)
+      if is_halted:
+        event.halt = True
     else:
       self.act_like_switch(packet, packet_in, dpid)
 

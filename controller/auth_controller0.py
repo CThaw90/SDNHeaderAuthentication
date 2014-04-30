@@ -83,23 +83,25 @@ class Tutorial (object):
   def act_like_switch (self, packet, packet_in, dpid):
     """
     Implement switch-like behavior.
-    1. Implementing a "simple" learning switch.
     """
 
-    log.debug(" => SWITCH[{2}]: Rcv {0} , packet_in: {1}".format(packet, packet_in, dpid))
+    # log.debug(" => SWITCH[{2}]: Rcv {0} , packet_in: {1}".format(packet, packet_in, dplog.debug(" => SWITCH[{2}]: Rcv {0} , packet_in: {1}".format(packet, packet_in, dpid))
+    log.debug(" => SWITCH[{2}]: Rcv {0}".format(packet, packet_in, dpid))
 
-    log.debug(" ==> Pkt Data:{0}".format(packet.dump()))
-    p = packet
-    if p.find('ipv4'):
-      while p:
-        if isinstance(p, basestring):
-          log.debug( "[%s bytes]={%s}" % (len(p),p) )
-          break
-        log.debug("[%s]=%s" % (p.__class__.__name__, p))
-        p = p.next
+    # p = packet
+    # if p.find('ipv4'):
+    #   while p:
+    #     if isinstance(p, basestring):
+    #       log.debug( "[%s bytes]={%s}" % (len(p),p) )
+    #       break
+    #     log.debug("[%s]=%s" % (p.__class__.__name__, p))
+    #     p = p.next
 
-    # Here's some psuedocode to start you off implementing a learning
-    # switch.  You'll need to rewrite it as real Python code.
+      # packet_in.data += "Lock is here"
+      # # log.debug(" ==> Pkt Data:{0}".format(packet.dump()))
+      # log.debug("  ++> Raw: {0}".format(packet.raw))
+      # log.debug("  ==> PacketIn Date:{0}".format(packet_in.data[53:]))
+
 
     # Learn the port for the source MAC
     # log.debug(" ==> MAC: {0}->{1}".format(packet.src, packet.dst))
@@ -111,32 +113,38 @@ class Tutorial (object):
       # Send packet out the associated port
       # self.resend_packet(packet_in, self.mac_to_port.get(str(packet.dst)))
 
-      # Once you have the above working, try pushing a flow entry
-      # instead of resending the packet (comment out the above and
-      # uncomment and complete the below.)
+      msg = None
+      # If the packcet is ipv4, modify a raw packet to append encrypted data.
+      # Otherwise, install a rule.
 
-      log.debug("Installing flow...")
-      # Maybe the log statement should have source/destination/port?
+      # It is assumed that raw packet given from the switch is only first 128
+      # bytes as a default POX setting.
+      if packet.find("ipv4"):
+        msg = of.ofp_packet_out(in_port=of.OFPP_NONE)
+        mod_raw = packet.raw
+        mod_raw += "auth=true"
+        msg.data = mod_raw
+        msg.actions.append(of.ofp_action_output(port=port_out))
+        log.debug("==> IPv4: Added encrypted data to the packet.")
+      else:
+        msg = of.ofp_flow_mod()
 
-      msg = of.ofp_flow_mod()
+        ## Set fields to match received packet
+        # Exact match
+        msg.match = of.ofp_match.from_packet(packet_in)
+        msg.idle_timeout = 60
+        msg.hard_timeout = 30 # for debugging purpose
+        msg.buffer_id = packet_in.buffer_id
+        msg.data = packet_in
+        msg.actions.append(of.ofp_action_output(port=port_out))
+        log.debug("==> Not IPv4: Send OF Mod")
 
-      ## Set fields to match received packet
-      # Exact match
-      msg.match = of.ofp_match.from_packet(packet_in)
-      msg.idle_timeout = 60
-      # msg.hard_timeout = 60 # for debugging purpose
-      msg.buffer_id = packet_in.buffer_id
-      msg.data = packet_in
-      msg.actions.append(of.ofp_action_output(port=port_out))
-
-      # log.debug(" ==> Msg: {0}".format(msg))
       # Send msg to swtich
       self.connection.send(msg)
 
     else:
       log.debug(" ==> Unknowd {0} -- Flood all".format(packet.dst))
       # Flood the packet out everything but the input port
-      # This part looks familiar, right?
       self.resend_packet(packet_in, of.OFPP_ALL)
 
 
