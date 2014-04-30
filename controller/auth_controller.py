@@ -147,61 +147,62 @@ class Tutorial (object):
 
 
     if self.priority==2000:
-	self.priority=20
+	   self.priority=20
 
     if data[:2]==b"\x39\xE1" and data[4:5]==b"\x10":
-	length= struct.unpack('>Q',) #check endianness
-	print "Length: "+length
+        length= struct.unpack('>Q',) #check endianness
+        print "Length: "+length
 
-	value=data[5:5+length]
-	rand_val = os.urandom(4)
+        value=data[5:5+length]
+        rand_val = os.urandom(4)
 
-	enc_val=0#!!!!!!do encryption of value with private key of controller and random value
+        enc_val=0#!!!!!!do encryption of value with private key of controller and random value
 
-	hash_array= array()
-	src_id=""
-	dst_id=""
+        hash_array= []
+        src_id=""
+        dst_id=""
 
-
-	for key in secure_path:
-		if ip.src.toStr()==key:
+        for key in secure_path:
+		  if ip.src.toStr()==key:
 			src_id=host[key]
 
-		if ip.dst.toStr()==key:
+		  if ip.dst.toStr()==key:
 			dst_id=host[key]
 
-	if src_ip!="" and dst_ip!="":
+        if src_ip!="" and dst_ip!="":
+		  index=-1
 
-
-		index=-1
         for i in range(0,len(secure_path)):
 			if secure_path[i][0]==src_id and secure_path[i][1]==dst_id:
 				index=i
 
         if index !=-1:
-			for i in range(0,len(secure_path[index])-2):
-			     hash_array.append(enc_val) #hash value encrypted)#!!!
-                 enc_val="hash" #need to hash value again
+            for i in range(0,(len(secure_path[index])-2)):
+                hash_array.append(enc_val) #hash value encrypted)#!!!
+                enc_val="hash" #need to hash value again
 
 
 			#!!!!!!!depending on length of hash valu need to chop up into peices
 			#and also may not need as many hashes
-			for i in range(1,len(secure_path[index])-1):
-				sw = secure_path[index][len(secur_path)-i]
-				rule = of.ofp_flow_mod()
-		    		rule.priority =self.priority+1
-				if i == len(secure_path[index])-2:
- 			        rule.match=of.ofp_match(dl_src=packet.src, dl_dst=packet.dst, nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
-				else:
-					rule.match=of.ofp_match(dl_src=EthAddr(hash_array(i)), dl_dst=packet.dst, nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
+            for i in range(1,len(secure_path[index])-1):
+                sw = secure_path[index][len(secur_path)-i]
 
-                rule.actions.append(of.ofp_action_dl_addr.set_src(EthAddr(hash_array(i-1))))     #!!!!!!!!hashed value from array may need to convert to MAC and split formate 00:00:00:00:00:00))
-				rule.actions.append(of.ofp_action_output(port = dest_port))		   #!!!!!!!!!need a way of determining the port number
-				self.connection.send(rule)
+                if dpid_to_str(connection.dpid)==sw[1]:
+                        rule = of.ofp_flow_mod()
+                        rule.priority =self.priority+1
 
-			for all switches: #!!!!go through all switches
+                        if i == len(secure_path[index])-2:
+                            rule.match=of.ofp_match(dl_src=packet.src, dl_dst=packet.dst, nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
+                        else:
+    					   rule.match=of.ofp_match(dl_src=EthAddr(hash_array(i)), dl_dst=packet.dst, nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
 
-				send drop rule to all switches
+                        rule.actions.append(of.ofp_action_dl_addr.set_src(EthAddr(hash_array(i-1))))     #!!!!!!!!hashed value from array may need to convert to MAC and split formate 00:00:00:00:00:00))
+                        rule.actions.append(of.ofp_action_output(port = dest_port))		   #!!!!!!!!!need a way of determining the port number
+                        self.connection.send(rule)
+
+			#for all switches: #!!!!go through all switches
+
+				#send drop rule to all switches
 				drop_rule = of.ofp_flow_mod()
 		    		drop_rule.priority =self.priority
 		    		drop_rule.match=of.ofp_match(dl_dst=packet.dst, nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
@@ -209,7 +210,7 @@ class Tutorial (object):
 		    		self.connection.send(drop_rule)
 
 
-		enc_value=0
+        enc_value=0
 		hash_array=array()
 		value=0
 
@@ -231,9 +232,6 @@ class Tutorial (object):
     """
 
     #print "Src: "+str(packet.src)+" Dest: "+str(packet.dst)
-
-
-
 
     dest_port=-1
 
