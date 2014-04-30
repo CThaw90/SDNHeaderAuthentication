@@ -188,7 +188,7 @@ class Controller (object):
 
         #print "Data: "+":".join("{:02x}".format(ord(c)) for c in data)
         if data[:2]==b"\x39\xE1" and data[4:5]==b"\x10":
-            AuthPacket=True
+
             length= struct.unpack('>H',data[2:4]) #check endianness
             #print "Length: "+str(length[0])
 
@@ -215,7 +215,7 @@ class Controller (object):
                     index=i
 
             if index !=-1:
-                print "index"
+
                 digest = SHA256.new()
 
                 for i in range(0,(len(self.secure_path[index])-2)):
@@ -225,9 +225,18 @@ class Controller (object):
                     enc_val=digest.hexdigest()
                     hash_array.append(EthAddr(self.createMAC(enc_val))) #hash value encrypted
 
+                sw="s"+dpid_to_str(self.connection.dpid)[16:17]
+                print sw
+                try:
 
-                for i in range(1,len(self.secure_path[index])-1):
-                    sw = self.secure_path[index][len(self.secure_path[index])-i]
+                        i=self.secure_path[index].index(sw)
+
+                except ValueError:
+                        i=-1
+
+                if i!=-1:
+                #for i in range(1,len(self.secure_path[index])-1):
+                    sw = self.secure_path[index][i]
                     sw = "00-00-00-00-00-0"+sw[1]
                     #print sw +"  "+dpid_to_str(self.connection.dpid)
                     #print hash_array[i-1].digest()
@@ -237,29 +246,29 @@ class Controller (object):
                             rule = of.ofp_flow_mod()
                             rule.priority =self.priority+1
 
-                            if i == len(self.secure_path[index])-2:
-                                rule.match=of.ofp_match(dl_src=packet.src, dl_dst=packet.dst, nw_src=ip.srcip, nw_dst=ip.dstip, tp_dst=tcp.dstport)
-                                print sw+" packet source "+str(packet.src)+" modifying to value "+str(hash_array[i-1])
+                            if i == 2:
+                                rule.match=of.ofp_match(dl_src=packet.src, dl_dst=packet.dst, nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
+                                print "added "+sw#sw+" packet source "+str(packet.src)+" modifying to value "+str(hash_array[i-1])
                             else:
-                                rule.match=of.ofp_match(dl_src=hash_array[i], nw_src=ip.srcip, nw_dst=ip.dstip, tp_dst=tcp.dstport)
-                                print sw+" packet source "+str(packet.src)+"=? "+str(hash_array[i])+" modifying to value "+str(hash_array[i-1])
+                                rule.match=of.ofp_match(dl_src=hash_array[len(self.secure_path[index])-i], nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport,tp_dst=tcp.dstport)
+                                print "added "+sw#+" packet source "+str(packet.src)+"=? "+str(hash_array[i])+" modifying to value "+str(hash_array[i-1])
 
 
-                            if i!=1:
-                                rule.actions.append(of.ofp_action_dl_addr.set_src(hash_array[i-1]))     #!!!!!!!!hashed value from array may need to convert to MAC and split formate 00:00:00:00:00:00))
+                            if i!=len(self.secure_path[index])-1:
+                                rule.actions.append(of.ofp_action_dl_addr.set_src(hash_array[len(self.secure_path[index])-1-i]))     #!!!!!!!!hashed value from array may need to convert to MAC and split formate 00:00:00:00:00:00))
 
                             rule.actions.append(of.ofp_action_output(port = of.OFPP_ALL))
                             self.connection.send(rule)
 
                             #self.resend_packet(packet_in, of.OFPP_ALL)
 
-
-                            drop_rule = of.ofp_flow_mod()
-                            drop_rule.priority =self.priority
-                            #print dir(drop_rule.actions)
-                            drop_rule.match=of.ofp_match( nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
-                            self.connection.send(drop_rule)
-                            self.priority+=2
+                else:
+                 drop_rule = of.ofp_flow_mod()
+                 drop_rule.priority =self.priority
+                        #print dir(drop_rule.actions)
+                 drop_rule.match=of.ofp_match( nw_src=ip.srcip, nw_dst=ip.dstip, tp_dst=tcp.dstport) #,
+                 self.connection.send(drop_rule)
+                 self.priority+=2
 
             enc_value=0
             enc_str=0
@@ -282,10 +291,11 @@ class Controller (object):
        happens
 
     """
-
+    self.resend_packet(packet_in, of.OFPP_ALL)
+    """
     print dpid_to_str(self.connection.dpid)+" Src: "+str(packet.src)+" Dest: "+str(packet.dst)
 
-    #self.mac_to_port[str(packet.src)]=packet_in.in_port
+    self.mac_to_port[str(packet.src)]=packet_in.in_port
     dest_port=-1
 
     #if the port associated with the destination MAC of the packet is known:
@@ -295,7 +305,7 @@ class Controller (object):
            dest_port=self.mac_to_port[key]
            break
 
-    if dest_port != -1:
+    if dest_port != -1 and  AuthPacket==False:
 
         #Since flow has not yet been added (placed here since this is the first
 	    #time the flow is seen) packet must be sent out
@@ -303,7 +313,7 @@ class Controller (object):
 
         fm = of.ofp_flow_mod()
         fm.priority =10
-        fm.match.dl_dst=packet.dst
+        fm.match=of.ofp_match( dl_src=packet.src, dl_dst=packet.dst)
         fm.actions.append(of.ofp_action_output(port = dest_port))
         self.connection.send(fm)
 
@@ -318,6 +328,7 @@ class Controller (object):
 
  	  self.resend_packet(packet_in, of.OFPP_ALL)
       #print "Flooding Packet"
+    """
 
 
 
