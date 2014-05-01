@@ -34,7 +34,7 @@ from pox.core import core
 from pox.lib.addresses import EthAddr
 from pox.lib.addresses import IPAddr
 from pox.lib.util import dpid_to_str
-import pox.lib.packet as packet
+import pox.lib.packet as pkt
 import pox.openflow.libopenflow_01 as of
 import time
 import os
@@ -80,7 +80,7 @@ class Controller (object):
     self.key_directory = keydir
 
 
-    self.digest = self.importDigest("Message")
+    #self.digest = self.importDigest("Message")
 
     self.private_key = None
     self.public_key = None
@@ -152,11 +152,13 @@ class Controller (object):
 
     #print "*rawdata string:*"+str(packet.raw[53:])+"*:end of string"
     data=packet.raw[54:]
-
+    if data.__contains__('%'):
+    	print ("Data: {0}".format(data))
+    
     ip=packet.find('ipv4')
     tcp=packet.find('tcp')
 
-
+    
     AuthPacket=False
     if ip is not None:
         #print tcp.srcport#tip.dstip#print ip.srcip.toStr()
@@ -168,6 +170,7 @@ class Controller (object):
 
         src_id=""
         dst_id=""
+	"""
         for key in self.hosts:
 
               if str(ip.srcip)==key:
@@ -175,7 +178,13 @@ class Controller (object):
 
               if str(ip.dstip)==key:
     			dst_id=self.hosts[key]
-
+	"""
+	if self.hosts.__contains__(str(ip.srcip)):
+		src_id=self.hosts[str(ip.srcip)]
+			
+	if self.hosts.__contains__(str(ip.dstip)):
+		dst_id=self.hosts[str(ip.dstip)]
+			
         if src_id!="" and dst_id!="":
     		  index=-1
 
@@ -339,21 +348,38 @@ class Controller (object):
     """
 
     packet = event.parsed # This is the parsed packet data.
-    if not packet.parsed:
-      log.warning("Ignoring incomplete packet")
-      return
+    #if not packet.parsed:
+      #log.warning("Ignoring incomplete packet")
+      #return
 
-    packet_in = event.ofp # The actual ofp_packet_in message.
+    if packet.type == pkt.ethernet.IP_TYPE:
+	ipv4_packet = event.parsed.find("ipv4")
+	ciphertext = ipv4_packet.raw.split('%', 1)
+	parsed_data = None
+	if len(ciphertext) == 2:
+		ciphertext = eval(ciphertext[1])
+		plaintext = self.private_key.decrypt(ciphertext)
+		parsed_data = self.parse_pkt_data(plaintext)
+		self.digest = self.importDigest(parsed_data[0])
+	public_key = self.find_host_key(parsed_data)
+	print(public_key)
+	if not type(public_key) == type(None) and self.verify_signature(public_key, parsed_data[1]):
+		print ("Machine {0} verified!".format(parsed_data[0]))
+		packet_in = event.ofp #The actual ofp_packet_in message
+		self.act_like_switch(packet, packet_in)
+		
+    else:
+	packet_in = event.ofp # The actual ofp_packet_in message.
+	self.act_like_switch(packet, packet_in)
+        #print("NOT IP TYPE")
 
-
-    self.act_like_switch(packet, packet_in)
+    #packet_in = event.ofp # The actual ofp_packet_in message.
+    #self.act_like_switch(packet, packet_in)
 
   def parse_pkt_data(self, raw_data):
 
 	delim = str("%")
 	parsed_data = raw_data.split(delim, 2)
-	garbage_data = parsed_data.pop(0)
-	#print (parsed_data)
 	return parsed_data
 
   def find_host_key(self, parsed_data=[]):
@@ -368,7 +394,7 @@ class Controller (object):
   def importDigest(self,message):
 
 	digest = SHA256.new()
-	data = b64encode(message)
+	data = b64encode(str(message))
 	digest.update(b64decode(data))
 	return digest
 
@@ -378,9 +404,7 @@ class Controller (object):
 		parseFilename = filename.rsplit("_", 1)
 		if len(parseFilename) == 2 and len(parseFilename[1].split(".")) == 2:
 			if parseFilename[1].split(".")[0] == str("pub"):
-				#self.host_ids.append(parseFilename[0])
 				current_key = open(self.key_directory + '/' + filename, 'r').read()
-				#self.host_pubkeys.append(RSA.importKey(current_key))
 				self.host_keys[parseFilename[0]] = RSA.importKey(current_key)
 
   def load_controller_keys(self):
@@ -390,22 +414,13 @@ class Controller (object):
 	self.private_key = RSA.importKey(private_keydata)
 	self.public_key = RSA.importKey(public_keydata)
 
-
-  def validate_signature(self, parsed_cipher, index):
-    ciphertext = parsed_cipher
-    signer = PKCS1_v1_5.new(self.host_pubkeys[index])
-    result = signer.verify(self.digest, b64decode(ciphertext))
-    return result
-
   def verify_signature(self, public_key, ciphertext):
-	#print ("Public Key Object={0}".format(public_key))
     signer = PKCS1_v1_5.new(public_key)
-
     result = signer.verify(self.digest, b64decode(ciphertext))
     return result
 
 
-def launch (keydir=None):
+def launch (keydir='/home/mininet/pox/keys/'):
 
   from pox.lib.recoco import Timer
 
