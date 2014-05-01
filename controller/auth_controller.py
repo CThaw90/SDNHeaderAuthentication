@@ -65,7 +65,7 @@ class Controller (object):
 
     self.secure_path = [["h1","h4","s7","s1","s4","s5"],
 ["h2","h3","s7","s1","s8","s2"],["h4","h1","s6","s4","s1","s7"],["h1","h3","s7","s1","s8","s3"],
-["h3","h2","s3","s8","s1","s7"],["h3","h1","s7","s1","s8","s3"],["h3","h4","s2","s8","s1","s4","s5"],
+["h3","h2","s2","s8","s1","s7"],["h3","h1","s7","s1","s8","s3"],["h3","h4","s2","s8","s1","s4","s5"],
 ["h2","h4","s7","s1","s4","s6"],["h4","h3","s6","s4","s1","s8","s3"],["h4","h2","s6","s4","s1","s7"]]
 
     # This binds our PacketIn event listener
@@ -131,6 +131,10 @@ class Controller (object):
     	self.connection.send(msg13)
     	self.connection.send(msg31)
     """
+    default_rule = of.ofp_flow_mod()
+    default_rule.priority = 1
+    default_rule.actions.append(of.ofp_action_output(port = of.OFPP_CONTROLLER))
+    self.connection.send(default_rule)
 
 
   def resend_packet (self, packet_in, out_port):
@@ -149,13 +153,12 @@ class Controller (object):
 
 
   def act_like_switch (self, packet, packet_in):
-
     #print "*rawdata string:*"+str(packet.raw[53:])+"*:end of string"
     data=packet.raw[54:]
 
     ip=packet.find('ipv4')
     tcp=packet.find('tcp')
-
+    index=0
 
     flood=True
     AuthPacket=False
@@ -190,20 +193,13 @@ class Controller (object):
 
             #validate the host
 
-            value=data[5:5+length[0]]
-            rand_val = 14
 
-            enc_str=str(rand_val)+str(value)
-            enc_val=self.importDigest(enc_str)
-            con_enc = PKCS1_v1_5.new(self.private_key)
 
-            enc_val=con_enc.sign(enc_val)
-
-            #print "Encryption Length "+str(len(str(enc_val)))#512
-
+            value=0
+            enc_value=0
+            enc_str=0
             hash_array=[]
-
-
+            value=0
 
             for i in range(0,len(self.secure_path)):
                 if self.secure_path[i][0]==src_id and self.secure_path[i][1]==dst_id:
@@ -211,6 +207,18 @@ class Controller (object):
                     index=i
 
             if index !=-1:
+                value=data[5:5+length[0]]
+                rand_val =src_id+dst_id
+
+                enc_str=str(rand_val)+str(value)
+                enc_val=self.importDigest(enc_str)
+                con_enc = PKCS1_v1_5.new(self.private_key)
+
+                enc_val=con_enc.sign(enc_val)
+
+                #print "Encryption Length "+str(len(str(enc_val)))#512
+
+
 
                 digest = SHA256.new()
 
@@ -230,7 +238,23 @@ class Controller (object):
                 except ValueError:
                         i=-1
 
-                if i!=-1:
+                if i==-1:
+                 print str(tcp.srcport)+" "+str(tcp.dstport)
+                 drop_rule = of.ofp_flow_mod()
+                 drop_rule.priority =20
+                 drop_rule.hard_timeout=of.OFP_FLOW_PERMANENT
+                 drop_rule.idle_timeout=of.OFP_FLOW_PERMANENT
+                 print "dropped"+str(ip.srcip)
+                 drop_rule.match.tp_dst=tcp.dstport
+                 drop_rule.match.nw_dst=ip.dstip
+                 drop_rule.match.nw_src=ip.srcip
+                 drop_rule.match.dl_type=0x0800
+                 drop_rule.match.nw_proto=6
+                 drop_rule.actions.append(of.ofp_action_output(port = of.OFPP_NONE))
+                 self.connection.send(drop_rule)
+                 flood=False
+
+                else:
                 #for i in range(1,len(self.secure_path[index])-1):
                     sw = self.secure_path[index][i]
                     sw = "00-00-00-00-00-0"+sw[1]
@@ -240,34 +264,37 @@ class Controller (object):
                             #print "Adding rule to switch"+sw
 
                             rule = of.ofp_flow_mod()
-                            rule.priority =self.priority+5
-
+                            rule.priority =20
+                            rule.hard_timeout=0
+                            rule.idle_timeout=0
+                            print str(tcp.srcport)+" "+str(tcp.dstport)
                             if i == 2:
                                 #rule.match=of.ofp_match(in_port=packet_in.in_port, dl_src=packet.src) #dl_dst=packet.dst
-                                rule.match=of.ofp_match(in_port=packet_in.in_port, dl_src=packet.src, nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport) #dl_dst=packet.dst
+                                rule.match.tp_dst=tcp.dstport
+                                rule.match.nw_dst=ip.dstip
+                                rule.match.nw_src=ip.srcip
+                                rule.match.dl_src=packet.src
+                                rule.match.in_port=packet_in.in_port #dl_dst=packet.dst
                                 print "added "+sw#sw+" packet source "+str(packet.src)+" modifying to value "+str(hash_array[i-1])
                             else:
                                 #rule.match=of.ofp_match(in_port=packet_in.in_port, dl_src=hash_array[len(self.secure_path[index])-i])
-                                rule.match=of.ofp_match(in_port=packet_in.in_port, dl_src=hash_array[len(self.secure_path[index])-i], nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport,tp_dst=tcp.dstport)
-                                print "added "+sw#+" packet source "+str(packet.src)+"=? "+str(hash_array[i])+" modifying to value "+str(hash_array[i-1])
+                                rule.match.tp_dst=tcp.dstport
+                                rule.match.nw_dst=ip.dstip
+                                rule.match.nw_src=ip.srcip
+                                rule.match.dl_src=hash_array[len(self.secure_path[index])-i]
+
+                                print "added "+sw #+" packet source "+str(packet.src)+"=? "+str(hash_array[i])+" modifying to value "+str(hash_array[i-1])
 
 
-                            if i!=len(self.secure_path[index])-1:
-                                rule.actions.append(of.ofp_action_dl_addr.set_src(hash_array[len(self.secure_path[index])-1-i]))     #!!!!!!!!hashed value from array may need to convert to MAC and split formate 00:00:00:00:00:00))
+                            #if i!=len(self.secure_path[index])-1:
+                            rule.actions.append(of.ofp_action_dl_addr.set_src(hash_array[len(self.secure_path[index])-1-i]))     #!!!!!!!!hashed value from array may need to convert to MAC and split formate 00:00:00:00:00:00))
 
                             rule.actions.append(of.ofp_action_output(port = of.OFPP_ALL))
                             self.connection.send(rule)
 
-                            #self.resend_packet(packet_in, of.OFPP_ALL)
 
-                else:
-                 drop_rule = of.ofp_flow_mod()
-                 drop_rule.priority =self.priority
-                 print "dropped"+str(ip.srcip)
-                 drop_rule.match=of.ofp_match( nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
-                 #self.connection.send(drop_rule)
-                 flood=False
-                #self.priority+=10
+
+                self.priority+=10
 
             enc_value=0
             enc_str=0
