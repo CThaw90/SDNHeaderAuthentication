@@ -61,7 +61,7 @@ class Controller (object):
   def __init__ (self, connection, keydir=None):
 
     self.connection = connection
-    self.hosts= {"10.0.0.1":"h1","10.0.0.2":"h2","10.0.0.3":"h3","10.0.0.4":"h4","10.0.1.0":"h1"}
+    self.hosts= {"10.0.0.1":"h1","10.0.0.2":"h2","10.0.0.3":"h3","10.0.0.4":"h4"}
 
     self.secure_path = [["h1","h4","s7","s1","s4","s5"],
 ["h2","h3","s7","s1","s8","s2"],["h4","h1","s6","s4","s1","s7"],["h1","h3","s7","s1","s8","s3"],
@@ -158,15 +158,12 @@ class Controller (object):
     ip=packet.find('ipv4')
     tcp=packet.find('tcp')
 
-    
+
+    flood=True
+
     AuthPacket=False
     if ip is not None:
-        #print tcp.srcport#tip.dstip#print ip.srcip.toStr()
 
-
-        #seen=False
-        #if len(self.mac_to_port) and str(packet.src) in self.mac_to_port:
-    	#seen=True
 
         src_id=""
         dst_id=""
@@ -253,13 +250,15 @@ class Controller (object):
                             #print "Adding rule to switch"+sw
 
                             rule = of.ofp_flow_mod()
-                            rule.priority =self.priority+1
+                            rule.priority =self.priority+5
 
                             if i == 2:
-                                rule.match=of.ofp_match(dl_src=packet.src, dl_dst=packet.dst, nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
+                                #rule.match=of.ofp_match(in_port=packet_in.in_port, dl_src=packet.src) #dl_dst=packet.dst
+                                rule.match=of.ofp_match(in_port=packet_in.in_port, dl_src=packet.src, nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport) #dl_dst=packet.dst
                                 print "added "+sw#sw+" packet source "+str(packet.src)+" modifying to value "+str(hash_array[i-1])
                             else:
-                                rule.match=of.ofp_match(dl_src=hash_array[len(self.secure_path[index])-i], nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport,tp_dst=tcp.dstport)
+                                #rule.match=of.ofp_match(in_port=packet_in.in_port, dl_src=hash_array[len(self.secure_path[index])-i])
+                                rule.match=of.ofp_match(in_port=packet_in.in_port, dl_src=hash_array[len(self.secure_path[index])-i], nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport,tp_dst=tcp.dstport)
                                 print "added "+sw#+" packet source "+str(packet.src)+"=? "+str(hash_array[i])+" modifying to value "+str(hash_array[i-1])
 
 
@@ -274,10 +273,11 @@ class Controller (object):
                 else:
                  drop_rule = of.ofp_flow_mod()
                  drop_rule.priority =self.priority
-                        #print dir(drop_rule.actions)
-                 drop_rule.match=of.ofp_match( nw_src=ip.srcip, nw_dst=ip.dstip, tp_dst=tcp.dstport) #,
-                 self.connection.send(drop_rule)
-                 self.priority+=2
+                 print "dropped"+str(ip.srcip)
+                 drop_rule.match=of.ofp_match( nw_src=ip.srcip, nw_dst=ip.dstip, tp_src=tcp.srcport, tp_dst=tcp.dstport)
+                 #self.connection.send(drop_rule)
+                 flood=False
+                #self.priority+=10
 
             enc_value=0
             enc_str=0
@@ -300,7 +300,8 @@ class Controller (object):
        happens
 
     """
-    self.resend_packet(packet_in, of.OFPP_ALL)
+    if flood==True:
+      self.resend_packet(packet_in, of.OFPP_ALL)
     """
     print dpid_to_str(self.connection.dpid)+" Src: "+str(packet.src)+" Dest: "+str(packet.dst)
 
