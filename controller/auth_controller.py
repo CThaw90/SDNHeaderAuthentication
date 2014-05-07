@@ -35,10 +35,8 @@ import struct
 from threading import Thread
 from Crypto.PublicKey import RSA
 from Crypto.Hash import SHA256
-#from Crypto.Hash.SHA256 import SHA256Hash
 from Crypto.Signature import PKCS1_v1_5
 from base64 import b64encode, b64decode
-
 from os import listdir
 
 
@@ -54,8 +52,13 @@ class Controller (object):
   def __init__ (self, connection, keydir=None):
 
     self.connection = connection
+    # The host dictionary associates the ip address with the host id, for
+    #identification in the controller validation
     self.hosts= {"10.0.0.1":"h1","10.0.0.2":"h2","10.0.0.3":"h3","10.0.0.4":"h4"}
 
+    # The secure path list contains a secure route between all of the hosts in the
+    #system to demonstrate the ability to only traverse secure paths when the
+    #Authentication Header is present
     self.secure_path = [["h1","h4","s7","s1","s4","s5"],
 ["h2","h3","s7","s1","s8","s2"],["h4","h1","s6","s4","s1","s7"],["h1","h3","s7","s1","s8","s3"],
 ["h3","h2","s2","s8","s1","s7"],["h3","h1","s7","s1","s8","s3"],["h3","h4","s2","s8","s1","s4","s5"],
@@ -64,12 +67,11 @@ class Controller (object):
     # This binds our PacketIn event listener
     connection.addListeners(self)
 
-    # Use this table to keep track of which ethernet address is on
-    # which switch port (keys are MACs, values are ports).
-    self.mac_to_port = {}
-    self.ip_to_port = {}
+
+    # Priority variable used to set the priority of the secure route rules
+    # to successively higher values when new rules are installed
     self.priority=20
-    self.verfied=False
+    self.verified=False
     self.key_directory = keydir
 
 
@@ -106,7 +108,7 @@ class Controller (object):
 
 
   def act_like_switch (self, packet, packet_in):
-    #print "*rawdata string:*"+str(packet.raw[53:])+"*:end of string"
+    #data retrieved from packet to be used in protocol to create flow rules
     data=packet.raw[54:]
 
     ip=packet.find('ipv4')
@@ -114,9 +116,10 @@ class Controller (object):
     index=0
 
     flood=True
-    AuthPacket=False
-    if ip is not None:
 
+    # Check to seee if packet is ip packet and retrieve source and destination
+    #if so
+    if ip is not None:
 
         src_id=""
         dst_id=""
@@ -132,21 +135,17 @@ class Controller (object):
     		  index=-1
 
 
-        #data= self.parse_pkt_data(ip.raw)
-#encrypting host id signed host id with public key of controller
+
         public_key=self.find_host_key(["host"+src_id[1]])
         if self.priority==2000:
     	   self.priority=20
 
-        #print "Data: "+":".join("{:02x}".format(ord(c)) for c in data)
-        if data[:2]==b"\x39\xE1" and data[4:5]==b"\x10":
+        # If header is present and the encrypted value has been verified than
+        #protocol is carried out
+        if data[:2]==b"\x39\xE1" and data[4:5]==b"\x10" and self.verified==True:
 
-            length= struct.unpack('>H',data[2:4]) #check endianness
-            #print "Length: "+str(length[0])
-
-            #validate the host
-
-
+            # Retrieve length of value from Authentication Header
+            length= struct.unpack('>H',data[2:4])
 
             value=0
             enc_value=0
@@ -154,12 +153,15 @@ class Controller (object):
             hash_array=[]
             value=0
 
+            # Determine the secure path that this IP packet must traverse
             for i in range(0,len(self.secure_path)):
                 if self.secure_path[i][0]==src_id and self.secure_path[i][1]==dst_id:
 
                     index=i
 
             if index !=-1:
+                #Use data value as a part of generated hashes
+
                 value=data[5:5+length[0]]
                 rand_val =src_id+dst_id
 
@@ -169,18 +171,16 @@ class Controller (object):
 
                 enc_val=con_enc.sign(enc_val)
 
-                #print "Encryption Length "+str(len(str(enc_val)))#512
-
-
-
                 digest = SHA256.new()
 
+                # Create hashes for each switch along the secure route from the
+                #encrypted value above
                 for i in range(0,(len(self.secure_path[index])-2)):
-                    #enc_val=self.importDigest(str(enc_val))
+
                	    data = b64encode(str(enc_val))
                     digest.update(b64decode(data))
                     enc_val=digest.hexdigest()
-                    hash_array.append(EthAddr(self.createMAC(enc_val))) #hash value encrypted
+                    hash_array.append(EthAddr(self.createMAC(enc_val)))
 
                 sw="s"+dpid_to_str(self.connection.dpid)[16:17]
                 print sw
@@ -191,6 +191,8 @@ class Controller (object):
                 except ValueError:
                         i=-1
 
+                # If the current switch is a member of the route than
+                #protocol executes
                 if i==-1:
                  print str(tcp.srcport)+" "+str(tcp.dstport)
                  drop_rule = of.ofp_flow_mod()
@@ -203,47 +205,48 @@ class Controller (object):
                  drop_rule.match.nw_src=ip.srcip
                  drop_rule.match.dl_type=0x0800
                  drop_rule.match.nw_proto=6
-                 drop_rule.actions=[]#.append(of.ofp_action_output(port = of.OFPP_NONE))
+                 drop_rule.actions=[]
                  self.connection.send(drop_rule)
                  flood=False
 
                 else:
-                #for i in range(1,len(self.secure_path[index])-1):
+
                     sw = self.secure_path[index][i]
                     sw = "00-00-00-00-00-0"+sw[1]
-                    #print sw +"  "+dpid_to_str(self.connection.dpid)
-                    #print hash_array[i-1].digest()
+
                     if dpid_to_str(self.connection.dpid)==sw:
-                            #print "Adding rule to switch"+sw
+
 
                             rule = of.ofp_flow_mod()
                             rule.priority =20
                             rule.hard_timeout=0
                             rule.idle_timeout=0
                             print str(tcp.srcport)+" "+str(tcp.dstport)
+
+                            # If the switch is the first switch in the route
+                            # then the expected MAC address should be from that
+                            # of the host otherwise the expected MAC is the next
+                            # value in the reversed hash chain sequence
                             if i == 2:
-                                #rule.match=of.ofp_match(in_port=packet_in.in_port, dl_src=packet.src) #dl_dst=packet.dst
+
                                 rule.match.tp_dst=tcp.dstport
                                 rule.match.nw_dst=ip.dstip
                                 rule.match.nw_src=ip.srcip
                                 rule.match.dl_type=0x0800
                                 rule.match.dl_src=packet.src
-                                rule.match.in_port=packet_in.in_port #dl_dst=packet.dst
-                                print "added "+sw#sw+" packet source "+str(packet.src)+" modifying to value "+str(hash_array[i-1])
+                                rule.match.in_port=packet_in.in_port
+                                print "added "+sw
                             else:
-                                #rule.match=of.ofp_match(in_port=packet_in.in_port, dl_src=hash_array[len(self.secure_path[index])-i])
                                 rule.match.tp_dst=tcp.dstport
                                 rule.match.nw_dst=ip.dstip
                                 rule.match.nw_src=ip.srcip
                                 rule.match.dl_type=0x0800
                                 rule.match.dl_src=hash_array[len(self.secure_path[index])-i]
 
-                                print "added "+sw #+" packet source "+str(packet.src)+"=? "+str(hash_array[i])+" modifying to value "+str(hash_array[i-1])
+                                print "added "+sw
 
 
-                            #if i!=len(self.secure_path[index])-1:
-                            rule.actions.append(of.ofp_action_dl_addr.set_src(hash_array[len(self.secure_path[index])-1-i]))     #!!!!!!!!hashed value from array may need to convert to MAC and split formate 00:00:00:00:00:00))
-
+                            rule.actions.append(of.ofp_action_dl_addr.set_src(hash_array[len(self.secure_path[index])-1-i]))
                             rule.actions.append(of.ofp_action_output(port = of.OFPP_ALL))
                             self.connection.send(rule)
 
@@ -270,13 +273,11 @@ class Controller (object):
     """
 
     packet = event.parsed # This is the parsed packet data.
-    #if not packet.parsed:
-      #log.warning("Ignoring incomplete packet")
-      #return
 
+    # Check to see if packet is IP packet and retrieve signed values
     if packet.type == pkt.ethernet.IP_TYPE:
         ipv4_packet = event.parsed.find("ipv4")
-        ciphertext = ipv4_packet.raw.split('%', 1)
+        ciphertext = ipv4_packet.raw[5:].split('%', 1)
         parsed_data = None
         public_key=None
 
@@ -287,10 +288,10 @@ class Controller (object):
                 parsed_data = self.parse_pkt_data(plaintext)
                 self.digest = self.importDigest(parsed_data[0])
                 public_key = self.find_host_key(parsed_data)
-                print(public_key)
+                print "Plaintext "+plaintext+" The Public Key: "+str(public_key)
 
             except:
-                print "Error evaluating ciphertext"
+                self.verified=False#print "Error evaluating ciphertext"
 
         if not type(public_key) == type(None) and self.verify_signature(public_key, parsed_data[1]):
             print ("Machine {0} verified!".format(parsed_data[0]))
@@ -301,6 +302,7 @@ class Controller (object):
     self.act_like_switch(packet, packet_in)
 
 
+  #Parse the plaintext of the message
   def parse_pkt_data(self, raw_data):
 
 	delim = str("%")
@@ -308,15 +310,19 @@ class Controller (object):
 	garbage_data = parsed_data.pop(0)
 	return parsed_data
 
+  #Function to figure out which key to use in decryption
   def find_host_key(self, parsed_data=[]):
     if len(parsed_data) != 2:
 		return None
     return (self.host_keys[parsed_data[0]] if self.host_keys.__contains__(parsed_data[0]) else None)
 
+  #Function constructs the MAC address for use in the flow rule creation
   def createMAC(self,str_arg):
     eth_str=str_arg[0:1]+":"+str_arg[1:2]+":"+str_arg[2:3]+":"+str_arg[3:4]+":"+str_arg[4:5]+":"+str_arg[5:6]
 
     return str(eth_str)
+
+  #Creates a message digest from the provided message
   def importDigest(self,message):
 
 	digest = SHA256.new()
@@ -324,6 +330,7 @@ class Controller (object):
 	digest.update(b64decode(data))
 	return digest
 
+  #Loads in all key values for each host in the topology
   def load_host_keys(self):
 	file_list = listdir(self.key_directory)
 	for filename in file_list:
@@ -333,6 +340,7 @@ class Controller (object):
 				current_key = open(self.key_directory + '/' + filename, 'r').read()
 				self.host_keys[parseFilename[0]] = RSA.importKey(current_key)
 
+  #Loads in the keys for the controller
   def load_controller_keys(self):
 	private_keydata = open(self.key_directory + 'controller_private.pem', 'r').read()
 	public_keydata = open(self.key_directory + 'controller_public.pem', 'r').read()
@@ -343,7 +351,7 @@ class Controller (object):
 
 
   def verify_signature(self, public_key, ciphertext):
-	#print ("Public Key Object={0}".format(public_key))
+
     signer = PKCS1_v1_5.new(public_key)
 
     result = signer.verify(self.digest, b64decode(ciphertext))
@@ -353,7 +361,6 @@ class Controller (object):
 def launch (keydir=None):
 
   from pox.lib.recoco import Timer
-
 
   core.openflow.miss_send_len = 0xffff
   def start_switch (event):
