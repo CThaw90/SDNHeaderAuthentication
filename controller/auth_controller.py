@@ -183,7 +183,7 @@ class Controller (object):
                     hash_array.append(EthAddr(self.createMAC(enc_val)))
 
                 sw="s"+dpid_to_str(self.connection.dpid)[16:17]
-                print sw
+                #print sw
                 try:
 
                         i=self.secure_path[index].index(sw)
@@ -194,12 +194,12 @@ class Controller (object):
                 # If the current switch is a member of the route than
                 #protocol executes
                 if i==-1:
-                 print str(tcp.srcport)+" "+str(tcp.dstport)
+
                  drop_rule = of.ofp_flow_mod()
                  drop_rule.priority =20
                  drop_rule.hard_timeout=of.OFP_FLOW_PERMANENT
                  drop_rule.idle_timeout=of.OFP_FLOW_PERMANENT
-                 print "dropped"+str(ip.srcip)
+                 #print "Dropped"
                  drop_rule.match.tp_dst=tcp.dstport
                  drop_rule.match.nw_dst=ip.dstip
                  drop_rule.match.nw_src=ip.srcip
@@ -221,7 +221,7 @@ class Controller (object):
                             rule.priority =20
                             rule.hard_timeout=0
                             rule.idle_timeout=0
-                            print str(tcp.srcport)+" "+str(tcp.dstport)
+
 
                             # If the switch is the first switch in the route
                             # then the expected MAC address should be from that
@@ -235,7 +235,7 @@ class Controller (object):
                                 rule.match.dl_type=0x0800
                                 rule.match.dl_src=packet.src
                                 rule.match.in_port=packet_in.in_port
-                                print "added "+sw
+
                             else:
                                 rule.match.tp_dst=tcp.dstport
                                 rule.match.nw_dst=ip.dstip
@@ -243,13 +243,12 @@ class Controller (object):
                                 rule.match.dl_type=0x0800
                                 rule.match.dl_src=hash_array[len(self.secure_path[index])-i]
 
-                                print "added "+sw
 
 
                             rule.actions.append(of.ofp_action_dl_addr.set_src(hash_array[len(self.secure_path[index])-1-i]))
                             rule.actions.append(of.ofp_action_output(port = of.OFPP_ALL))
                             self.connection.send(rule)
-
+                            #print "Path rule added"
 
 
                 self.priority+=10
@@ -288,13 +287,13 @@ class Controller (object):
                 parsed_data = self.parse_pkt_data(plaintext)
                 self.digest = self.importDigest(parsed_data[0])
                 public_key = self.find_host_key(parsed_data)
-                print "Plaintext "+plaintext+" The Public Key: "+str(public_key)
+
 
             except:
-                self.verified=False#print "Error evaluating ciphertext"
+                self.verified=False
 
         if not type(public_key) == type(None) and self.verify_signature(public_key, parsed_data[1]):
-            print ("Machine {0} verified!".format(parsed_data[0]))
+            #print ("Machine {0} verified!".format(parsed_data[0]))
             self.verified =True
 
 
@@ -307,7 +306,6 @@ class Controller (object):
 
 	delim = str("%")
 	parsed_data = raw_data.split(delim, 2)
-	garbage_data = parsed_data.pop(0)
 	return parsed_data
 
   #Function to figure out which key to use in decryption
