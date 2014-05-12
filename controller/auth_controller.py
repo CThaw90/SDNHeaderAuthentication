@@ -183,7 +183,7 @@ class Controller (object):
                     hash_array.append(EthAddr(self.createMAC(enc_val)))
 
                 sw="s"+dpid_to_str(self.connection.dpid)[16:17]
-                #print sw
+                print sw
                 try:
 
                         i=self.secure_path[index].index(sw)
@@ -193,23 +193,23 @@ class Controller (object):
 
                 # If the current switch is a member of the route than
                 #protocol executes
-                if i==-1:
 
-                 drop_rule = of.ofp_flow_mod()
-                 drop_rule.priority =20
-                 drop_rule.hard_timeout=of.OFP_FLOW_PERMANENT
-                 drop_rule.idle_timeout=of.OFP_FLOW_PERMANENT
-                 #print "Dropped"
-                 drop_rule.match.tp_dst=tcp.dstport
-                 drop_rule.match.nw_dst=ip.dstip
-                 drop_rule.match.nw_src=ip.srcip
-                 drop_rule.match.dl_type=0x0800
-                 drop_rule.match.nw_proto=6
-                 drop_rule.actions=[]
-                 self.connection.send(drop_rule)
-                 flood=False
 
-                else:
+                drop_rule = of.ofp_flow_mod()
+                drop_rule.priority =self.priority
+                drop_rule.hard_timeout=of.OFP_FLOW_PERMANENT
+                drop_rule.idle_timeout=of.OFP_FLOW_PERMANENT
+                print "Dropped"
+                drop_rule.match.tp_dst=tcp.dstport
+                drop_rule.match.nw_dst=ip.dstip
+                drop_rule.match.nw_src=ip.srcip
+                drop_rule.match.dl_type=0x0800
+                drop_rule.match.nw_proto=6
+                drop_rule.actions=[]
+                self.connection.send(drop_rule)
+                flood=False
+
+                if i!=-1:
 
                     sw = self.secure_path[index][i]
                     sw = "00-00-00-00-00-0"+sw[1]
@@ -218,7 +218,7 @@ class Controller (object):
 
 
                             rule = of.ofp_flow_mod()
-                            rule.priority =20
+                            rule.priority =self.priority+5
                             rule.hard_timeout=0
                             rule.idle_timeout=0
 
@@ -238,6 +238,7 @@ class Controller (object):
 
                             else:
                                 rule.match.tp_dst=tcp.dstport
+                                rule.match.in_port=packet_in.in_port
                                 rule.match.nw_dst=ip.dstip
                                 rule.match.nw_src=ip.srcip
                                 rule.match.dl_type=0x0800
@@ -248,7 +249,7 @@ class Controller (object):
                             rule.actions.append(of.ofp_action_dl_addr.set_src(hash_array[len(self.secure_path[index])-1-i]))
                             rule.actions.append(of.ofp_action_output(port = of.OFPP_ALL))
                             self.connection.send(rule)
-                            #print "Path rule added"
+                            print "Path rule added"
 
 
                 self.priority+=10
